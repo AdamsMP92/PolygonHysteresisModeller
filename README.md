@@ -21,15 +21,16 @@ Start Python with `pixi run python` or run your script with `pixi run python scr
 from polygon_hysteresis_modeller import generate_loop, generate_polygon, plot_hysteresis
 
 xc, yr = -0.25, 0.5
-x, y = generate_polygon(N=51, xc=xc, yr=yr)
-(x_up, y_up), (x_down, y_down) = generate_loop(N=51, xc=xc, yr=yr)
+anchorpoints = [[xc, 0.0, 1000.0], [0.0, yr, 1000.0]]
+x, y = generate_polygon(N=51, anchorpoints=anchorpoints)
+(x_up, y_up), (x_down, y_down) = generate_loop(N=51, anchorpoints=anchorpoints)
 figure = plot_hysteresis(x, y, xc, yr, output="hysteresis.png")
 ```
 
 `generate_polygon` returns the ascending branch. `generate_loop` also returns
 its point-symmetric descending branch, ordered from positive to negative field.
-Both functions return NumPy arrays. `N` sets the number of points per branch,
-while `xc` and `yr` set the nominal coercive field and remanence.
+Both functions return NumPy arrays. `N` sets the number of points per branch.
+Each optional anchor row gives `[field, target magnetization, gain]`.
 
-`plot_hysteresis` draws both branches from the ascending branch and returns a
-Matplotlib figure. Pass `output` to save the figure.
+`plot_hysteresis` plots the supplied coordinates, marks `xc` and `yr`, and
+returns a Matplotlib figure. Pass `output` to save the figure.

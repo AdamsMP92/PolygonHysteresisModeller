@@ -7,30 +7,26 @@ from scipy.sparse.linalg import spsolve
 
 def generate_polygon(
     N=21,
-    xc=-0.4,
-    yr=0.5,
-    A=1.0,
-    B=0.1,
-    Kc=1000.0,
-    Kr=1000.0,
+    slope_penalty=1.0,
+    curvature_penalty=0.1,
     flat_edges=True,
     left_saturation_width=1.0,
     right_saturation_width=1.0,
-    additional_anchorpoints=None,
+    anchorpoints=None,
+    *,
+    sine_transform=False,
+    mirror=False,
 ):
     """Generate a synthetic hysteresis branch as a polygonal chain.
 
     The branch consists of N support points on [-1, 1].
     The magnetization values are determined by minimizing
-    a discrete energy functional consisting of slope,
-    curvature, coercivity, remanence, and optional anchor terms.
+    a discrete energy functional with slope, curvature, and optional anchor terms.
 
     The continuous counterpart of the energy is
 
-        E = A/2 * integral(f'**2, dx)
-          + B/2 * integral(f''**2, dx)
-          + Kc/2 * f(xc)**2
-          + Kr/2 * (f(0) - yr)**2
+        E = slope_penalty/2 * integral(f'**2, dx)
+          + curvature_penalty/2 * integral(f''**2, dx)
           + 1/2 * sum(K_j * (f(x_anchor_j) - y_anchor_j)**2).
 
     The slope and curvature contributions are discretized
@@ -49,18 +45,10 @@ def generate_polygon(
     ----------
     N : int, optional
         Total number of support points, including endpoints.
-    xc : float, optional
-        Nominal signed coercive field.
-    yr : float, optional
-        Nominal normalized remanent magnetization.
-    A : float, optional
+    slope_penalty : float, optional
         Nonnegative slope penalty coefficient.
-    B : float, optional
+    curvature_penalty : float, optional
         Positive discrete curvature penalty coefficient.
-    Kc : float, optional
-        Coercivity alignment coefficient.
-    Kr : float, optional
-        Remanence alignment coefficient.
     flat_edges : bool, optional
         If True, additionally enforce horizontal first
         and last polygon segments.
@@ -72,24 +60,27 @@ def generate_polygon(
         Field coordinate at which right saturation begins.
         For example, 0.4 enforces f(x) = 1
         throughout [0.4, 1].
-    additional_anchorpoints : array_like of shape (n, 3), optional
+    anchorpoints : array_like of shape (n, 3), optional
         Rows [x, y, K] give a field coordinate, a target magnetization,
         and a gain. The targets use the piecewise-linear interpolant.
-        Coordinates must satisfy -1 <= x <= 1 and K >= 0.
+        Coordinates must satisfy -1 <= x <= 1 and K >= 0. Default is None.
+    sine_transform : bool, optional
+        If True, apply sin(pi/2 * y) to the optimized values.
+    mirror : bool, optional
+        If True, append the mirrored branch after any sine transformation.
 
     Returns
     -------
     x : numpy.ndarray
         Field coordinates, including the saturation boundaries.
     y : numpy.ndarray
-        Optimized magnetization values.
+        Magnetization values after the requested transformations.
 
     Notes
     -----
     The saturation conditions are hard constraints.
 
-    Coercivity, remanence, and additional anchors are soft
-    constraints controlled by penalty coefficients.
+    Anchors are soft constraints controlled by their gains.
 
     The grid is generally nonuniform because the saturation
     boundaries are explicitly included as support points.
@@ -107,26 +98,18 @@ def generate_polygon(
     if N < 5:
         raise ValueError("Require N >= 5.")
 
-    if not -1 < xc < 0:
-        raise ValueError("Require -1 < xc < 0.")
-
     if not 0 < left_saturation_width <= 1:
         raise ValueError("Invalid left saturation width.")
 
     if not 0 < right_saturation_width <= 1:
         raise ValueError("Invalid right saturation width.")
 
-    if B <= 0 or min(A, Kc, Kr) < 0:
+    if curvature_penalty <= 0 or slope_penalty < 0:
         raise ValueError("Invalid energy coefficients.")
 
     # Saturation boundaries
     xl = -left_saturation_width
     xr = right_saturation_width
-
-    if xc <= xl:
-        raise ValueError(
-            "Coercive point lies inside the left saturation region."
-        )
 
     # Construct a grid containing both saturation boundaries
     x = np.linspace(-1, 1, N)
@@ -190,20 +173,11 @@ def generate_polygon(
             shape=(1, N),
         )
 
-    # Control point operators
-    Pc = interpolation_row(xc)
-    Pr = interpolation_row(0.0)
-
     # Quadratic energy residual operator
     L = vstack([
-        diags(np.sqrt(A*h)) @ D1,
-        diags(np.sqrt(B*hc)) @ D2,
-        np.sqrt(Kc) * Pc,
-        np.sqrt(Kr) * Pr,
+        diags(np.sqrt(slope_penalty * h)) @ D1,
+        diags(np.sqrt(curvature_penalty * hc)) @ D2,
     ]).tocsr()
-
-    target = np.zeros(L.shape[0])
-    target[-1] = np.sqrt(Kr) * yr
 
     # Hard saturation constraints
     left = x <= xl
@@ -228,14 +202,14 @@ def generate_polygon(
         raise ValueError("No free support points remain.")
 
     L_free = L[:, free]
-    offset = L @ y - target
+    offset = L @ y
 
-    if additional_anchorpoints is not None:
-        anchors = np.asarray(additional_anchorpoints, dtype=float)
+    if anchorpoints is not None:
+        anchors = np.asarray(anchorpoints, dtype=float)
         if anchors.shape == (0,):
             anchors = anchors.reshape(0, 3)
         if anchors.ndim != 2 or anchors.shape[1] != 3:
-            raise ValueError("additional_anchorpoints must have shape (n, 3).")
+            raise ValueError("anchorpoints must have shape (n, 3).")
         if (
             not np.all(np.isfinite(anchors))
             or np.any(np.abs(anchors[:, 0]) > 1)
@@ -269,15 +243,21 @@ def generate_polygon(
         raise RuntimeError("Quadratic solve returned non-finite magnetization values.")
     y[free] = solution
 
+    if sine_transform:
+        y = np.sin(np.pi / 2 * y)
+    if mirror:
+        return mirror_polygon(x, y)
     return x, y
 
 
 def generate_loop(*args, **kwargs):
     """Return ``((x_up, y_up), (x_down, y_down))`` for a point-symmetric loop.
 
-    Pass the same arguments as to :func:`generate_polygon`. Field coordinates
+    Pass the same generation arguments as to :func:`generate_polygon`.
+    This function constructs the two branches separately. Field coordinates
     increase along the ascending branch and decrease along the descending branch.
     """
+    kwargs["mirror"] = False
     x, y = generate_polygon(*args, **kwargs)
     return (x, y), (-x, -y)
 

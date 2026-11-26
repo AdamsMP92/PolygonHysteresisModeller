@@ -4,25 +4,20 @@ from polygon_hysteresis_modeller import generate_polygon, plot_hysteresis, mirro
 
 import mammos_analysis as ma
 import mammos_entity as me
+import numpy as np
 
-xc = -0.5  # coercivity control parameter
-yr = 0.8    # remanence control parameter
-sat_r = 0.4 # saturation width right
-sat_l = 0.7 # saturation width left
-N_points = 51 # number of datapoints on the upper branch
+Xc = [-0.5, 0.0, 10000]  # coercivity anchor
+Yr = [0.0, 0.8, 10000]   # remanence anchor
 x, y = generate_polygon(
-    N=N_points,
-    xc=xc,
-    yr=yr,
-    A=1.0,
-    B=0.1,
-    Kc=10000,
-    Kr=10000,
-    left_saturation_width=sat_l,
-    right_saturation_width=sat_r,
+    N=51,
+    slope_penalty=1.0,
+    curvature_penalty=0.01,
+    left_saturation_width=0.7,
+    right_saturation_width=0.4,
+    anchorpoints=[Xc, Yr, [-0.1, 0.1, 30.0]],
+    sine_transform=True, 
+    mirror=True,
 )
-
-#x, y = mirror_polygon(x, y)
 
 plot_hysteresis(x, y, xc, yr, output="hysteresis.png")
 
