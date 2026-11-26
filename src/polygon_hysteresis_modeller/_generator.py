@@ -283,3 +283,6 @@ def generate_loop(*args, **kwargs):
     """
     x, y = generate_polygon(*args, **kwargs)
     return (x, y), (-x, -y)
+
+def mirror_polygon(x: np.ndarray, y: np.ndarray):
+    return np.concatenate((x, x[::-1])), np.concatenate((y, -y))
