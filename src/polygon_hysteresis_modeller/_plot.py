@@ -20,7 +20,7 @@ def plot_hysteresis(x, y, *, output=None):
     axes.plot(x, y, "o-")
     axes.axhline(0, color="gray", linewidth=0.5)
     axes.axvline(0, color="gray", linewidth=0.5)
-    axes.set(xlabel="x", ylabel="f(x)")
+    axes.set(xlabel="x", ylabel="y")
     axes.legend()
     axes.grid()
 
