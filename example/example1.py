@@ -6,7 +6,7 @@ import mammos_analysis as ma
 import mammos_entity as me
 
 xc = -0.5  # coercivity control parameter
-yr = 1.3    # remanence control parameter
+yr = 0.8    # remanence control parameter
 sat_r = 0.4 # saturation width right
 sat_l = 0.7 # saturation width left
 N_points = 51 # number of datapoints on the upper branch
@@ -15,10 +15,9 @@ x, y = generate_polygon(
     xc=xc,
     yr=yr,
     A=1.0,
-    B=0.01,
+    B=0.1,
     Kc=10000,
     Kr=10000,
-    Km=1000,
     left_saturation_width=sat_l,
     right_saturation_width=sat_r,
 )

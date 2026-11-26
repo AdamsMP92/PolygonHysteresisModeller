@@ -1,7 +1,6 @@
 """Generate normalized polygonal hysteresis curves."""
 
 import numpy as np
-from scipy.optimize import least_squares
 from scipy.sparse import csr_matrix, diags, vstack
 from scipy.sparse.linalg import spsolve
 
@@ -14,17 +13,17 @@ def generate_polygon(
     B=0.1,
     Kc=1000.0,
     Kr=1000.0,
-    Km=1000.0,
     flat_edges=True,
     left_saturation_width=1.0,
     right_saturation_width=1.0,
+    additional_anchorpoints=None,
 ):
     """Generate a synthetic hysteresis branch as a polygonal chain.
 
     The branch consists of N support points on [-1, 1].
     The magnetization values are determined by minimizing
     a discrete energy functional consisting of slope,
-    curvature, coercivity, remanence, and monotonicity terms.
+    curvature, coercivity, remanence, and optional anchor terms.
 
     The continuous counterpart of the energy is
 
@@ -32,7 +31,7 @@ def generate_polygon(
           + B/2 * integral(f''**2, dx)
           + Kc/2 * f(xc)**2
           + Kr/2 * (f(0) - yr)**2
-          + Km/2 * integral(min(0, f')**2, dx).
+          + 1/2 * sum(K_j * (f(x_anchor_j) - y_anchor_j)**2).
 
     The slope and curvature contributions are discretized
     using differences between adjacent support points.
@@ -62,8 +61,6 @@ def generate_polygon(
         Coercivity alignment coefficient.
     Kr : float, optional
         Remanence alignment coefficient.
-    Km : float, optional
-        Monotonicity penalty coefficient.
     flat_edges : bool, optional
         If True, additionally enforce horizontal first
         and last polygon segments.
@@ -75,6 +72,10 @@ def generate_polygon(
         Field coordinate at which right saturation begins.
         For example, 0.4 enforces f(x) = 1
         throughout [0.4, 1].
+    additional_anchorpoints : array_like of shape (n, 3), optional
+        Rows [x, y, K] give a field coordinate, a target magnetization,
+        and a gain. The targets use the piecewise-linear interpolant.
+        Coordinates must satisfy -1 <= x <= 1 and K >= 0.
 
     Returns
     -------
@@ -87,7 +88,7 @@ def generate_polygon(
     -----
     The saturation conditions are hard constraints.
 
-    Coercivity, remanence, and monotonicity are soft
+    Coercivity, remanence, and additional anchors are soft
     constraints controlled by penalty coefficients.
 
     The grid is generally nonuniform because the saturation
@@ -115,7 +116,7 @@ def generate_polygon(
     if not 0 < right_saturation_width <= 1:
         raise ValueError("Invalid right saturation width.")
 
-    if B <= 0 or min(A, Kc, Kr, Km) < 0:
+    if B <= 0 or min(A, Kc, Kr) < 0:
         raise ValueError("Invalid energy coefficients.")
 
     # Saturation boundaries
@@ -227,50 +228,46 @@ def generate_polygon(
         raise ValueError("No free support points remain.")
 
     L_free = L[:, free]
-    D_free = D1[:, free]
-
     offset = L @ y - target
-    d_offset = D1 @ y
 
-    # Initial solution without monotonicity penalty
-    z0 = spsolve(
+    if additional_anchorpoints is not None:
+        anchors = np.asarray(additional_anchorpoints, dtype=float)
+        if anchors.shape == (0,):
+            anchors = anchors.reshape(0, 3)
+        if anchors.ndim != 2 or anchors.shape[1] != 3:
+            raise ValueError("additional_anchorpoints must have shape (n, 3).")
+        if (
+            not np.all(np.isfinite(anchors))
+            or np.any(np.abs(anchors[:, 0]) > 1)
+            or np.any(anchors[:, 2] < 0)
+        ):
+            raise ValueError("Anchor entries must be finite with -1 <= x <= 1 and K >= 0.")
+
+        anchor_rows = []
+        anchor_offsets = []
+        for anchor_x, anchor_y, gain in anchors:
+            if gain == 0:
+                continue
+            row = interpolation_row(anchor_x)
+            free_row = row[:, free]
+            if free_row.count_nonzero() == 0:
+                continue  # The anchor residual is constant on the free variables.
+            anchor_weight = np.sqrt(gain)
+            anchor_rows.append(anchor_weight * free_row)
+            anchor_offsets.append(anchor_weight * ((row @ y)[0] - anchor_y))
+
+        if anchor_rows:
+            L_free = vstack([L_free, *anchor_rows], format="csr")
+            offset = np.concatenate((offset, anchor_offsets))
+
+    # Solve the normal equations for the free support points.
+    solution = spsolve(
         L_free.T @ L_free,
         -L_free.T @ offset,
     )
-
-    weight = np.sqrt(Km * h)
-
-    def residual(z):
-
-        dy = D_free @ z + d_offset
-
-        return np.concatenate([
-            L_free @ z + offset,
-            weight * np.minimum(dy, 0),
-        ])
-
-    def jacobian(z):
-
-        dy = D_free @ z + d_offset
-
-        return vstack([
-            L_free,
-            diags(weight * (dy < 0)) @ D_free,
-        ]).tocsr()
-
-    result = least_squares(
-        residual,
-        z0,
-        jac=jacobian,
-        ftol=1e-12,
-        xtol=1e-12,
-        gtol=1e-12,
-    )
-
-    if not result.success:
-        raise RuntimeError(result.message)
-
-    y[free] = result.x
+    if not np.all(np.isfinite(solution)):
+        raise RuntimeError("Quadratic solve returned non-finite magnetization values.")
+    y[free] = solution
 
     return x, y
 
