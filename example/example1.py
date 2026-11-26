@@ -14,12 +14,12 @@ x, y = generate_polygon(
     curvature_penalty=0.01,
     left_saturation_width=0.7,
     right_saturation_width=0.4,
-    anchorpoints=[Xc, Yr, [-0.1, 0.1, 30.0]],
+    anchorpoints=[Xc, Yr],
     sine_transform=True, 
     mirror=True,
 )
 
-plot_hysteresis(x, y, Xc[0], Yr[1], output="hysteresis.png")
+plot_hysteresis(x, y, output="hysteresis.png")
 
 H = me.Entity("MagneticFieldStrength", x)
 M = me.Entity("SaturationMagnetisation", y)
