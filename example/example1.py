@@ -19,7 +19,7 @@ x, y = generate_polygon(
     mirror=True,
 )
 
-plot_hysteresis(x, y, xc, yr, output="hysteresis.png")
+plot_hysteresis(x, y, Xc[0], Yr[1], output="hysteresis.png")
 
 H = me.Entity("MagneticFieldStrength", x)
 M = me.Entity("SaturationMagnetisation", y)
