@@ -1,0 +1,25 @@
+.pixi/
+/.vscode/
+.DS_Store
+__pycache__/
+*.egg-info/
+/build/
+/dist/
+
+# LaTeX build files
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.synctex
+*.synctex.gz
+*.toc
+/model_documentation/model.pdf
+
+# PNG images
+*.png

@@ -1,0 +1,46 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage[margin=25mm]{geometry}
+\pagestyle{empty}
+
+\begin{document}
+\section*{Polygonal hysteresis model}
+
+The ascending branch \(f(x)\) of the synthetic loop is the piecewise-linear
+interpolant of \((x_i,y_i)\), \(i=1,\ldots,N\), with normalized field \(x_i\), normalized
+magnetization \(y_i\), \(N\geq 5\), and \(-1=x_1<\cdots<x_N=1\).
+The saturation onsets are \(x_{\mathrm L}=-w_{\mathrm L}\) and
+\(x_{\mathrm R}=w_{\mathrm R}\), with \(w_{\mathrm L},w_{\mathrm R}\in(0,1]\).
+Each onset inside \((-1,1)\) replaces the nearest unused interior node of
+an initially uniform grid, processing the left onset first.
+
+The saturation constraints fix \(y_i=-1\) for \(x_i\leq x_{\mathrm L}\)
+and \(y_i=1\) for \(x_i\geq x_{\mathrm R}\). With \texttt{flat\_edges}
+(enabled by default), \(y_2=-1\) and \(y_{N-1}=1\) are also fixed. The two
+sets of fixed nodes must be disjoint and leave at least one free node.
+
+The segment lengths \(h_i\), slopes \(s_i\), and discrete curvatures \(c_i\)
+are defined by
+\begin{align*}
+  h_i &= x_{i+1}-x_i, & s_i &= \frac{y_{i+1}-y_i}{h_i},
+    && i=1,\ldots,N-1, \\
+  \bar h_i &= \frac{h_{i-1}+h_i}{2}, & c_i &= \frac{s_i-s_{i-1}}{\bar h_i},
+    && i=2,\ldots,N-1.
+\end{align*}
+The free values \(y_i\in\mathbb{R}\) minimize the discrete energy
+\begin{align*}
+  E(\mathbf{y}) ={}& \frac{A}{2}\sum_{i=1}^{N-1} h_i s_i^2
+       + \frac{B}{2}\sum_{i=2}^{N-1} \bar h_i c_i^2
+       + \frac{K_m}{2}\sum_{i=1}^{N-1} h_i\min(0,s_i)^2 \\
+       &+ \frac{K_c}{2} f(x_c)^2 + \frac{K_r}{2}\bigl[f(0)-y_r\bigr]^2.
+\end{align*}
+Here \(B>0\) and \(A,K_m,K_c,K_r\geq 0\). The \(K_m\) term penalizes
+negative slopes. The soft targets are \(f(x_c)=0\) at the nominal coercive
+field \(x_c\in(x_{\mathrm L},0)\) and \(f(0)=y_r\) for the nominal remanence
+\(y_r\). The sparse least-squares solver starts from the quadratic solution
+for \(K_m=0\).
+
+The descending branch is the point reflection \(f_{\downarrow}(x)=-f(-x)\),
+traversed from \(x=1\) to \(x=-1\).
+\end{document}
