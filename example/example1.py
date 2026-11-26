@@ -6,14 +6,14 @@ import mammos_analysis as ma
 import mammos_entity as me
 import numpy as np
 
-Xc = [-0.5, 0.0, 10000]  # coercivity anchor
+Xc = [-0.3, 0.0, 10000]  # coercivity anchor
 Yr = [0.0, 0.8, 10000]   # remanence anchor
 x, y = generate_polygon(
     N=51,
     slope_penalty=1.0,
-    curvature_penalty=0.01,
-    left_saturation_width=0.7,
-    right_saturation_width=0.4,
+    curvature_penalty=1e-3,
+    left_saturation_width=0.5,
+    right_saturation_width=0.5,
     anchorpoints=[Xc, Yr],
     sine_transform=True, 
     mirror=True,

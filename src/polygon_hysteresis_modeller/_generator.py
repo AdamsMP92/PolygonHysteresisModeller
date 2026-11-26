@@ -19,7 +19,7 @@ def generate_polygon(
 ):
     """Generate a synthetic hysteresis branch as a polygonal chain.
 
-    The branch consists of N support points on [-1, 1].
+    The branch consists of N equally spaced support points on [-1, 1].
     The magnetization values are determined by minimizing
     a discrete energy functional with slope, curvature, and optional anchor terms.
 
@@ -32,14 +32,12 @@ def generate_polygon(
     The slope and curvature contributions are discretized
     using differences between adjacent support points.
 
-    The endpoint and saturation conditions are imposed
-    exactly:
+    The saturation thresholds fix the magnetization at existing support points.
 
-        f(x) = -1 for -1 <= x <= -left_saturation_width
-        f(x) =  1 for right_saturation_width <= x <= 1
+        y_i = -1 if x_i <= -left_saturation_width
+        y_i =  1 if x_i >=  right_saturation_width
 
-    Only the magnetization values outside the prescribed
-    saturation regions are optimized.
+    The optimization varies the free magnetization values.
 
     Parameters
     ----------
@@ -48,22 +46,20 @@ def generate_polygon(
     slope_penalty : float, optional
         Nonnegative slope penalty coefficient.
     curvature_penalty : float, optional
-        Positive discrete curvature penalty coefficient.
+        Nonnegative discrete curvature penalty coefficient. At least one
+        of slope_penalty and curvature_penalty must be positive.
     flat_edges : bool, optional
         If True, additionally enforce horizontal first
         and last polygon segments.
     left_saturation_width : float, optional
-        Absolute field coordinate at which left saturation
-        begins. For example, 0.4 enforces f(x) = -1
-        throughout [-1, -0.4].
+        Magnitude of the left saturation threshold.
     right_saturation_width : float, optional
-        Field coordinate at which right saturation begins.
-        For example, 0.4 enforces f(x) = 1
-        throughout [0.4, 1].
+        Field coordinate of the right saturation threshold.
     anchorpoints : array_like of shape (n, 3), optional
         Rows [x, y, K] give a field coordinate, a target magnetization,
         and a gain. The targets use the piecewise-linear interpolant.
-        Coordinates must satisfy -1 <= x <= 1 and K >= 0. Default is None.
+        Require -left_saturation_width < x < right_saturation_width and K >= 0.
+        Default is None.
     sine_transform : bool, optional
         If True, apply sin(pi/2 * y) to the optimized values.
     mirror : bool, optional
@@ -72,7 +68,7 @@ def generate_polygon(
     Returns
     -------
     x : numpy.ndarray
-        Field coordinates, including the saturation boundaries.
+        Equidistant field coordinates along each branch.
     y : numpy.ndarray
         Magnetization values after the requested transformations.
 
@@ -81,10 +77,6 @@ def generate_polygon(
     The saturation conditions are hard constraints.
 
     Anchors are soft constraints controlled by their gains.
-
-    The grid is generally nonuniform because the saturation
-    boundaries are explicitly included as support points.
-    The discrete energy accounts for nonuniform spacing.
 
     Boundedness outside the fixed saturation regions is
     not explicitly enforced.
@@ -104,37 +96,13 @@ def generate_polygon(
     if not 0 < right_saturation_width <= 1:
         raise ValueError("Invalid right saturation width.")
 
-    if curvature_penalty <= 0 or slope_penalty < 0:
+    if curvature_penalty < 0 or slope_penalty < 0:
         raise ValueError("Invalid energy coefficients.")
+    if slope_penalty == curvature_penalty == 0:
+        raise ValueError("At least one penalty weight must be positive.")
 
-    # Saturation boundaries
-    xl = -left_saturation_width
-    xr = right_saturation_width
-
-    # Construct a grid containing both saturation boundaries
-    x = np.linspace(-1, 1, N)
-
-    used = {0, N - 1}
-
-    for boundary in (xl, xr):
-
-        if boundary in (-1.0, 1.0):
-            continue
-
-        candidates = [
-            i for i in range(1, N - 1)
-            if i not in used
-        ]
-
-        j = min(candidates, key=lambda i: abs(x[i] - boundary))
-
-        x[j] = boundary
-        used.add(j)
-
-    x = np.sort(x)
-
-    if np.any(np.diff(x) <= 0):
-        raise ValueError("Degenerate grid.")
+    # Center the indices before division to keep opposite nodes symmetric.
+    x = (2.0 * np.arange(N) - (N - 1)) / (N - 1)
 
     # Local segment lengths
     h = np.diff(x)
@@ -147,7 +115,7 @@ def generate_polygon(
         format="csr",
     )
 
-    # Second derivative operator on a nonuniform grid
+    # Second derivative operator
     hc = (h[:-1] + h[1:]) / 2
 
     D2 = diags(
@@ -180,8 +148,8 @@ def generate_polygon(
     ]).tocsr()
 
     # Hard saturation constraints
-    left = x <= xl
-    right = x >= xr
+    left = x <= -left_saturation_width
+    right = x >= right_saturation_width
 
     if flat_edges:
         left[:2] = True
@@ -210,12 +178,16 @@ def generate_polygon(
             anchors = anchors.reshape(0, 3)
         if anchors.ndim != 2 or anchors.shape[1] != 3:
             raise ValueError("anchorpoints must have shape (n, 3).")
+        if not np.all(np.isfinite(anchors)) or np.any(anchors[:, 2] < 0):
+            raise ValueError("Anchor entries must be finite and gains must be nonnegative.")
         if (
-            not np.all(np.isfinite(anchors))
-            or np.any(np.abs(anchors[:, 0]) > 1)
-            or np.any(anchors[:, 2] < 0)
+            np.any(anchors[:, 0] <= -left_saturation_width)
+            or np.any(anchors[:, 0] >= right_saturation_width)
         ):
-            raise ValueError("Anchor entries must be finite with -1 <= x <= 1 and K >= 0.")
+            raise ValueError(
+                "Anchor field coordinates must satisfy "
+                f"{-left_saturation_width} < x < {right_saturation_width}."
+            )
 
         anchor_rows = []
         anchor_offsets = []
