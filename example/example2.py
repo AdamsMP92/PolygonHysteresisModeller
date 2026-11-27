@@ -1,23 +1,37 @@
-"""Plot a loop with three zero crossings at negative fields."""
+"""Plot a hysteresis loop with three negative-field zero crossings and its sectors."""
+ 
+from polygon_hysteresis_modeller import generate_polygon, plot_hysteresis, is_regular
 
-from polygon_hysteresis_modeller import generate_polygon, plot_hysteresis
+import mammos_analysis as ma
+import mammos_entity as me
+import numpy as np
 
 Xc = [-0.3, 0.0, 10000]  # coercivity anchor
 Yr = [0.0, 0.7, 10000]   # remanence anchor
 x, y = generate_polygon(
-    N=101,
-    slope_penalty=1.0,
-    curvature_penalty=1e-3,
-    left_saturation_width=0.8,
-    right_saturation_width=0.8,
+    points_per_branch=101,
+    smoothness_weights=[1.0, 1e-3],
+    saturation_bounds=[0.8, 0.8],
     anchorpoints=[
         [-0.60, 0.50, 10000],
         Xc,
         [-0.16, -0.40, 10000],
         Yr,
     ],
-    sine_transform=True, 
-    mirror=True,
+    apply_sine=False, 
+    apply_mirror=False,
 )
 
-plot_hysteresis(x, y, output="hysteresis_example2.png")
+
+
+plot_hysteresis(x, y, output="hysteresis2.png")
+
+analysis = ma.hysteresis.extrinsic_properties(
+            me.Entity("MagneticFieldStrength", x), 
+            me.Entity("SaturationMagnetisation", y), 
+            demagnetization_coefficient=1/3
+           )
+
+print(analysis.Mr)
+print(analysis.Hc)
+print(analysis.BHmax)

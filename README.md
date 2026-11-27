@@ -22,14 +22,17 @@ from polygon_hysteresis_modeller import generate_loop, generate_polygon, plot_hy
 
 xc, yr = -0.25, 0.5
 anchorpoints = [[xc, 0.0, 1000.0], [0.0, yr, 1000.0]]
-x, y = generate_polygon(N=51, anchorpoints=anchorpoints)
-(x_up, y_up), (x_down, y_down) = generate_loop(N=51, anchorpoints=anchorpoints)
+x, y = generate_polygon(points_per_branch=51, anchorpoints=anchorpoints)
+(x_up, y_up), (x_down, y_down) = generate_loop(
+    points_per_branch=51, anchorpoints=anchorpoints
+)
 figure = plot_hysteresis(x, y, xc, yr, output="hysteresis.png")
 ```
 
 `generate_polygon` returns the ascending branch. `generate_loop` also returns
 its point-symmetric descending branch, ordered from positive to negative field.
-Both functions return NumPy arrays. `N` sets the number of points per branch.
+Both functions return NumPy arrays. `points_per_branch` sets the number
+of points per branch, including endpoints.
 Each optional anchor row gives `[field, target magnetization, gain]`.
 
 `plot_hysteresis` plots the supplied coordinates, marks `xc` and `yr`, and

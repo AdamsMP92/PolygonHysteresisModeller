@@ -6,20 +6,18 @@ from scipy.sparse.linalg import spsolve
 
 
 def generate_polygon(
-    N=21,
-    slope_penalty=1.0,
-    curvature_penalty=0.1,
-    flat_edges=True,
-    left_saturation_width=1.0,
-    right_saturation_width=1.0,
+    points_per_branch=21,
+    smoothness_weights=[1.0, 0.1],
+    apply_flat_edges=True,
+    saturation_bounds=[1.0, 1.0],
     anchorpoints=None,
     *,
-    sine_transform=False,
-    mirror=False,
+    apply_sine=False,
+    apply_mirror=False,
 ):
     """Generate a synthetic hysteresis branch as a polygonal chain.
 
-    The branch consists of N equally spaced support points on [-1, 1].
+    The branch consists of equally spaced support points on [-1, 1].
     The magnetization values are determined by minimizing
     a discrete energy functional with slope, curvature, and optional anchor terms.
 
@@ -34,35 +32,32 @@ def generate_polygon(
 
     The saturation thresholds fix the magnetization at existing support points.
 
-        y_i = -1 if x_i <= -left_saturation_width
-        y_i =  1 if x_i >=  right_saturation_width
+        y_i = -1 if x_i <= -sat_left
+        y_i =  1 if x_i >=  sat_right
 
     The optimization varies the free magnetization values.
 
     Parameters
     ----------
-    N : int, optional
-        Total number of support points, including endpoints.
-    slope_penalty : float, optional
-        Nonnegative slope penalty coefficient.
-    curvature_penalty : float, optional
-        Nonnegative discrete curvature penalty coefficient. At least one
-        of slope_penalty and curvature_penalty must be positive.
-    flat_edges : bool, optional
+    points_per_branch : int, optional
+        Number of support points in one branch, including endpoints.
+    smoothness_weights : array_like of length 2, optional
+        Nonnegative weights [slope_penalty, curvature_penalty].
+        At least one weight must be positive. Default is [1.0, 0.1].
+    apply_flat_edges : bool, optional
         If True, additionally enforce horizontal first
         and last polygon segments.
-    left_saturation_width : float, optional
-        Magnitude of the left saturation threshold.
-    right_saturation_width : float, optional
-        Field coordinate of the right saturation threshold.
+    saturation_bounds : array_like of length 2, optional
+        Threshold magnitudes [sat_left, sat_right], each in (0, 1].
+        Default is [1.0, 1.0].
     anchorpoints : array_like of shape (n, 3), optional
         Rows [x, y, K] give a field coordinate, a target magnetization,
         and a gain. The targets use the piecewise-linear interpolant.
-        Require -left_saturation_width < x < right_saturation_width and K >= 0.
+        Require -sat_left < x < sat_right and K >= 0.
         Default is None.
-    sine_transform : bool, optional
+    apply_sine : bool, optional
         If True, apply sin(pi/2 * y) to the optimized values.
-    mirror : bool, optional
+    apply_mirror : bool, optional
         If True, append the mirrored branch after any sine transformation.
 
     Returns
@@ -87,22 +82,22 @@ def generate_polygon(
         y_desc = -y[::-1].
     """
 
-    if N < 5:
-        raise ValueError("Require N >= 5.")
+    if points_per_branch < 5:
+        raise ValueError("Require points_per_branch >= 5.")
 
-    if not 0 < left_saturation_width <= 1:
-        raise ValueError("Invalid left saturation width.")
+    sat_left, sat_right = saturation_bounds
+    if not (0 < sat_left <= 1 and 0 < sat_right <= 1):
+        raise ValueError("saturation_bounds must contain two values in (0, 1].")
 
-    if not 0 < right_saturation_width <= 1:
-        raise ValueError("Invalid right saturation width.")
-
+    slope_penalty, curvature_penalty = smoothness_weights
     if curvature_penalty < 0 or slope_penalty < 0:
         raise ValueError("Invalid energy coefficients.")
     if slope_penalty == curvature_penalty == 0:
         raise ValueError("At least one penalty weight must be positive.")
 
     # Center the indices before division to keep opposite nodes symmetric.
-    x = (2.0 * np.arange(N) - (N - 1)) / (N - 1)
+    segment_count = points_per_branch - 1
+    x = (2.0 * np.arange(points_per_branch) - segment_count) / segment_count
 
     # Local segment lengths
     h = np.diff(x)
@@ -111,7 +106,7 @@ def generate_polygon(
     D1 = diags(
         [-1/h, 1/h],
         [0, 1],
-        shape=(N - 1, N),
+        shape=(segment_count, points_per_branch),
         format="csr",
     )
 
@@ -125,20 +120,20 @@ def generate_polygon(
             1 / (hc * h[1:]),
         ],
         [0, 1, 2],
-        shape=(N - 2, N),
+        shape=(points_per_branch - 2, points_per_branch),
         format="csr",
     )
 
     def interpolation_row(xp):
 
         j = np.searchsorted(x, xp) - 1
-        j = np.clip(j, 0, N - 2)
+        j = np.clip(j, 0, points_per_branch - 2)
 
         t = (xp - x[j]) / h[j]
 
         return csr_matrix(
             ([1 - t, t], ([0, 0], [j, j + 1])),
-            shape=(1, N),
+            shape=(1, points_per_branch),
         )
 
     # Quadratic energy residual operator
@@ -148,17 +143,17 @@ def generate_polygon(
     ]).tocsr()
 
     # Hard saturation constraints
-    left = x <= -left_saturation_width
-    right = x >= right_saturation_width
+    left = x <= -sat_left
+    right = x >= sat_right
 
-    if flat_edges:
+    if apply_flat_edges:
         left[:2] = True
         right[-2:] = True
 
     if np.any(left & right):
         raise ValueError("Overlapping saturation constraints.")
 
-    y = np.zeros(N)
+    y = np.zeros(points_per_branch)
 
     y[left] = -1
     y[right] = 1
@@ -181,12 +176,12 @@ def generate_polygon(
         if not np.all(np.isfinite(anchors)) or np.any(anchors[:, 2] < 0):
             raise ValueError("Anchor entries must be finite and gains must be nonnegative.")
         if (
-            np.any(anchors[:, 0] <= -left_saturation_width)
-            or np.any(anchors[:, 0] >= right_saturation_width)
+            np.any(anchors[:, 0] <= -sat_left)
+            or np.any(anchors[:, 0] >= sat_right)
         ):
             raise ValueError(
                 "Anchor field coordinates must satisfy "
-                f"{-left_saturation_width} < x < {right_saturation_width}."
+                f"{-sat_left} < x < {sat_right}."
             )
 
         anchor_rows = []
@@ -215,9 +210,9 @@ def generate_polygon(
         raise RuntimeError("Quadratic solve returned non-finite magnetization values.")
     y[free] = solution
 
-    if sine_transform:
+    if apply_sine:
         y = np.sin(np.pi / 2 * y)
-    if mirror:
+    if apply_mirror:
         return mirror_polygon(x, y)
     return x, y
 
@@ -229,7 +224,7 @@ def generate_loop(*args, **kwargs):
     This function constructs the two branches separately. Field coordinates
     increase along the ascending branch and decrease along the descending branch.
     """
-    kwargs["mirror"] = False
+    kwargs["apply_mirror"] = False
     x, y = generate_polygon(*args, **kwargs)
     return (x, y), (-x, -y)
 
