@@ -1,5 +1,8 @@
 import numpy as np
+import mammos_analysis as ma
+import mammos_entity as me
 
+from ._plot import plot_curve
 
 def monotone_sectors(values):
     direction = np.sign(np.diff(values))
@@ -74,3 +77,36 @@ def is_regular(x, y):
 
     return True
 
+
+
+def mammos_analyse_curve(x, y, saturation_bounds):
+
+    Ms_bounds = me.Entity("SaturationMagnetization", saturation_bounds)
+    H = me.Entity("MagneticFieldStrength", x)
+    M = me.Entity("SaturationMagnetisation", y)
+
+    def report_metric(name, extract, **kwargs):
+        try:
+            result = extract(H, M, **kwargs)
+        except ValueError as error:
+            print(f"{name} could not be calculated.", *error.args[:1])
+            return None
+        if not np.isfinite(result.value):
+            print(f"{name} could not be calculated.")
+            return None
+        print(result)
+        return result.value
+
+    Mr = report_metric("Mr", ma.hysteresis.extract_remanent_magnetization)
+    Hc = report_metric("Hc", ma.hysteresis.extract_coercive_field)
+    report_metric("BHmax", ma.hysteresis.extract_BHmax, demagnetization_coefficient=1/3)
+
+    x_p, y_p = [], []
+    if Mr is not None:
+        x_p.append(0)
+        y_p.append(Mr)
+    if Hc is not None:
+        x_p.append(-Hc)
+        y_p.append(0)
+    if x_p:
+        plot_curve(H.value, M.value, Ms_bounds.value, x_p, y_p)

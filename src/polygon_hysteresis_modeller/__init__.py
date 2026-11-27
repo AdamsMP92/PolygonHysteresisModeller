@@ -2,6 +2,6 @@
 
 from ._generator import generate_loop, generate_polygon, mirror_polygon
 from ._plot import plot_hysteresis, plot_curve
-from ._analysis import is_regular
+from ._analysis import is_regular, mammos_analyse_curve
 
-__all__ = ["generate_loop", "generate_polygon", "mirror_polygon", "plot_hysteresis", "plot_curve", "is_regular"]
+__all__ = ["generate_loop", "generate_polygon", "mirror_polygon", "plot_hysteresis", "plot_curve", "is_regular", "mammos_analyse_curve"]

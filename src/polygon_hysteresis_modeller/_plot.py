@@ -41,7 +41,8 @@ def plot_curve(x, y, saturation_bounds, x_p=None, y_p=None):
     ax.plot(x, y, marker="o", color="blue", zorder=3)
 
     if x_p is not None:
-        ax.plot(x_p, y_p, marker="o", color="red", zorder=4)
+        ax.plot(x_p, y_p, marker="o", color="red",
+            linestyle="none", zorder=4)
     
     ax.axvspan(
         -saturation_bounds[0],
