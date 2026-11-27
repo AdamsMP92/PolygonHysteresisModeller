@@ -14,5 +14,4 @@ mammos-units = "*"
 notebook = "*"
 
 [tasks]
-demo = "python example/example1.py"
 notebooks = "jupyter notebook notebooks/examples.ipynb"
