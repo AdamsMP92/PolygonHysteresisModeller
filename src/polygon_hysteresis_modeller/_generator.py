@@ -3,6 +3,59 @@
 import numpy as np
 from scipy.sparse import csr_matrix, diags, vstack
 from scipy.sparse.linalg import spsolve
+from scipy.stats import truncnorm
+
+
+def _validate_saturation_bounds(saturation_bounds):
+    sat_left, sat_right = saturation_bounds
+    if not (0 < sat_left <= 1 and 0 < sat_right <= 1):
+        raise ValueError("saturation_bounds must contain two values in (0, 1].")
+    return sat_left, sat_right
+
+
+def fuzzy_line_anchors(saturation_bounds, gain, sigma, n_anchors, *, seed=None):
+    """Return a list of anchor rows ``[x, y, K]`` for ``generate_polygon``.
+
+    Place ``n_anchors`` equally spaced centers between (-sat_left, -1) and
+    (sat_right, 1), excluding the endpoints. Draw Gaussian displacements
+    with standard deviation ``sigma`` perpendicular to the segment,
+    conditioned on each field coordinate lying between the thresholds.
+    Each row receives ``gain / n_anchors``. Pass a seed to reproduce the draw.
+    """
+    sat_left, sat_right = _validate_saturation_bounds(saturation_bounds)
+    if not np.isfinite(gain) or gain < 0:
+        raise ValueError("gain must be finite and nonnegative.")
+    if not np.isfinite(sigma) or sigma < 0:
+        raise ValueError("sigma must be finite and nonnegative.")
+    if not isinstance(n_anchors, (int, np.integer)) or n_anchors < 1:
+        raise ValueError("n_anchors must be a positive integer.")
+
+    x_left, x_right = -sat_left, sat_right
+    span = x_right - x_left
+    fractions = np.arange(1, n_anchors + 1) / (n_anchors + 1)
+    x = x_left + span * fractions
+    y = -1.0 + 2.0 * fractions
+
+    if sigma > 0:
+        # Project the displacement along the unit normal onto the field axis.
+        sigma_x = sigma * (2.0 / np.hypot(span, 2.0))
+        shifted_x = truncnorm.rvs(
+            (x_left - x) / sigma_x,
+            (x_right - x) / sigma_x,
+            loc=x,
+            scale=sigma_x,
+            random_state=np.random.default_rng(seed),
+        )
+        shifted_x = np.clip(
+            shifted_x,
+            np.nextafter(x_left, x_right),
+            np.nextafter(x_right, x_left),
+        )
+        # Derive the magnetization displacement from the slope of the normal.
+        y -= (span / 2.0) * (shifted_x - x)
+        x = shifted_x
+
+    return np.column_stack((x, y, np.full(n_anchors, gain / n_anchors))).tolist()
 
 
 def generate_polygon(
@@ -85,9 +138,7 @@ def generate_polygon(
     if points_per_branch < 5:
         raise ValueError("Require points_per_branch >= 5.")
 
-    sat_left, sat_right = saturation_bounds
-    if not (0 < sat_left <= 1 and 0 < sat_right <= 1):
-        raise ValueError("saturation_bounds must contain two values in (0, 1].")
+    sat_left, sat_right = _validate_saturation_bounds(saturation_bounds)
 
     slope_penalty, curvature_penalty = smoothness_weights
     if curvature_penalty < 0 or slope_penalty < 0:
