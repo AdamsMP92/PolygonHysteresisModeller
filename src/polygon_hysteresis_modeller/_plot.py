@@ -56,7 +56,7 @@ def plot_curve(x, y, saturation_bounds, x_p=None, y_p=None):
     ax.axvline(0, color="black", linewidth=1, zorder=2)
     ax.set_axisbelow(True)
     ax.grid(True)
-    ax.set_xlabel(r"$\mu_0 M$")
-    ax.set_ylabel(r"$\mu_0 H$")
+    ax.set_xlabel(r"$\mu_0 H$")
+    ax.set_ylabel(r"$\mu_0 M$")
 
     plt.show()
