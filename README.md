@@ -9,5 +9,5 @@ and magnetization coordinates.
 pixi run notebooks
 ```
 
-The notebook contains the model description, curve plots, and five MaMMoS
+The notebook contains the model description, curve plots, and six MaMMoS
 analysis examples. [Open the notebook](notebooks/examples.ipynb)

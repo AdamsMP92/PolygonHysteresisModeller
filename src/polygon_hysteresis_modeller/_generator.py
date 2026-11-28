@@ -65,6 +65,7 @@ def generate_polygon(
     saturation_bounds=[1.0, 1.0],
     anchorpoints=None,
     *,
+    saturation_bound_values=[-1.0, 1.0],
     apply_sine=False,
     apply_mirror=False,
 ):
@@ -85,8 +86,8 @@ def generate_polygon(
 
     The saturation thresholds fix the magnetization at existing support points.
 
-        y_i = -1 if x_i <= -sat_left
-        y_i =  1 if x_i >=  sat_right
+        y_i = y_left  if x_i <= -sat_left
+        y_i = y_right if x_i >=  sat_right
 
     The optimization varies the free magnetization values.
 
@@ -108,6 +109,9 @@ def generate_polygon(
         and a gain. The targets use the piecewise-linear interpolant.
         Require -sat_left < x < sat_right and K >= 0.
         Default is None.
+    saturation_bound_values : array_like of length 2, optional
+        Fixed magnetization values [y_left, y_right] before any optional
+        transformations. Default is [-1.0, 1.0].
     apply_sine : bool, optional
         If True, apply sin(pi/2 * y) to the optimized values.
     apply_mirror : bool, optional
@@ -139,6 +143,10 @@ def generate_polygon(
         raise ValueError("Require points_per_branch >= 5.")
 
     sat_left, sat_right = _validate_saturation_bounds(saturation_bounds)
+    bound_values = np.asarray(saturation_bound_values, dtype=float)
+    if bound_values.shape != (2,) or not np.all(np.isfinite(bound_values)):
+        raise ValueError("saturation_bound_values must contain two finite values.")
+    y_left, y_right = bound_values
 
     slope_penalty, curvature_penalty = smoothness_weights
     if curvature_penalty < 0 or slope_penalty < 0:
@@ -206,8 +214,8 @@ def generate_polygon(
 
     y = np.zeros(points_per_branch)
 
-    y[left] = -1
-    y[right] = 1
+    y[left] = y_left
+    y[right] = y_right
 
     # Free optimization variables
     free = np.flatnonzero(~(left | right))
